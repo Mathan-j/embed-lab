@@ -39,8 +39,14 @@ class MapCard extends StatelessWidget {
       title: 'Cluster map',
       loading: loading,
       error: error,
+      // Not "Loading...": CardShell renders a spinner whenever `loading` is
+      // true and only falls through to this child when it is false, so this
+      // branch is reached exactly when the map is NOT loading and has no data
+      // -- after a failed fetch. Claiming to be loading there is wrong in
+      // every state it can appear in, and it reads as a hang under the offline
+      // banner.
       child: data == null
-          ? const Text('Loading the 600-word map...')
+          ? const Text('No map data.')
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

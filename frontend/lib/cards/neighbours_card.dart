@@ -15,6 +15,11 @@ class NeighboursCard extends StatelessWidget {
   final double? catDogCosine;
   final double? catCarCosine;
 
+  /// True when the backend host cannot be reached at all. The offline banner
+  /// already explains why, so the contrast row must not sit on "loading..."
+  /// forever -- two elements saying different things about the same failure.
+  final bool offline;
+
   const NeighboursCard({
     super.key,
     required this.data,
@@ -22,6 +27,7 @@ class NeighboursCard extends StatelessWidget {
     required this.error,
     required this.catDogCosine,
     required this.catCarCosine,
+    this.offline = false,
   });
 
   @override
@@ -60,7 +66,10 @@ class NeighboursCard extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 4),
-          if (catDogCosine == null || catCarCosine == null)
+          if (offline)
+            const Text('unavailable while the API is unreachable',
+                style: TextStyle(fontSize: 12))
+          else if (catDogCosine == null || catCarCosine == null)
             const Text('loading contrast pair...', style: TextStyle(fontSize: 12))
           else
             Text(

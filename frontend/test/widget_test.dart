@@ -89,6 +89,13 @@ void main() {
     expect(find.textContaining('Could not load'), findsNothing);
     expect(find.textContaining('ClientException'), findsNothing);
 
+    // Nor may anything still claim to be loading. Two elements saying
+    // different things about the same failure ("can't reach the API" above
+    // "Loading the 600-word map...") reads as a half-broken app, and those
+    // futures have already rejected -- they will never resolve.
+    expect(find.textContaining('Loading'), findsNothing);
+    expect(find.textContaining('loading contrast pair'), findsNothing);
+
     // ...while the cards themselves are still on screen, in a neutral state.
     for (final title in [
       'Tokens',

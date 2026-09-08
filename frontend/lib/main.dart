@@ -224,10 +224,13 @@ class _EmbedLabScreenState extends State<EmbedLabScreen> {
             ),
             NeighboursCard(
               data: _neighbours,
-              loading: _loadingWord,
+              loading: unreachable ? false : _loadingWord,
               error: unreachable ? null : _neighboursError,
               catDogCosine: _catDogCosine,
               catCarCosine: _catCarCosine,
+              // Same reason: the contrast row's "loading contrast pair..."
+              // never resolves once the fetch has failed.
+              offline: unreachable,
             ),
             PredictionCard(
               data: _classify,
@@ -236,7 +239,11 @@ class _EmbedLabScreenState extends State<EmbedLabScreen> {
             ),
             MapCard(
               data: _map,
-              loading: _loadingMap,
+              // Not `_loadingMap`: when the host is unreachable these futures
+              // have already rejected, so leaving the card in its loading
+              // state would print "Loading the 600-word map..." forever
+              // directly beneath a banner saying the API cannot be reached.
+              loading: unreachable ? false : _loadingMap,
               error: unreachable ? null : _mapError,
               typedWord: _queriedWord,
             ),
