@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.api import router
 from app.config import settings
 from app.errors import StageError
+from app.train import build_models
 from app.vocab import VocabIndex
 
 
@@ -17,6 +18,10 @@ async def lifespan(app: FastAPI):
     torch.set_num_threads(settings.torch_threads)  # exactly once, here
 
     app.state.vocab_index = VocabIndex()  # embeds the 600-word vocabulary once (~2s)
+
+    # Builds the live classifier plus the scored supervised/unsupervised figures,
+    # all at one seed, once -- see app.train.build_models.
+    app.state.trained_models = build_models(settings.seed)
 
     yield
 

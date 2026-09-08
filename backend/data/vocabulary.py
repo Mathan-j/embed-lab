@@ -44,8 +44,8 @@ VOCABULARY: dict[str, list[str]] = {
         "funicular", "monorail", "subway", "streetcar", "locomotive", "caboose", "boxcar", "forklift", "bulldozer", "excavator",
         "crane", "dumptruck", "backhoe", "snowplow", "snowmobile", "ambulance", "firetruck", "hearse", "limousine", "convertible",
         "sedan", "hatchback", "minivan", "pickup", "camper", "caravan", "trailer", "rickshaw", "chariot", "stagecoach",
-        "carriage", "buggy", "wheelbarrow", "handcart", "gurney", "golfcart", "dunebuggy", "gokart", "bobsled", "toboggan",
-        "hangglider", "paraglider", "jetski", "hydrofoil", "minisub", "dinghy", "raft", "barge", "longboat", "catboat",
+        "carriage", "buggy", "wheelbarrow", "handcart", "minibus", "golfcart", "dunebuggy", "gokart", "bobsled", "toboggan",
+        "hangglider", "paraglider", "jetski", "hydrofoil", "minisub", "dinghy", "raft", "barge", "longboat", "riverboat",
     ],
     "emotion": [
         "joy", "dread", "envy", "relief", "grief", "delight", "unease", "fear", "anger", "rage",
@@ -61,7 +61,7 @@ VOCABULARY: dict[str, list[str]] = {
     ],
     "colour": [
         "crimson", "teal", "ochre", "indigo", "beige", "magenta", "scarlet", "maroon", "burgundy", "vermilion",
-        "azure", "cerulean", "cobalt", "navy", "turquoise", "cyan", "aquamarine", "emerald", "jade", "olive",
+        "azure", "cerulean", "cobalt", "navy", "turquoise", "cyan", "aquamarine", "emerald", "jade", "verdigris",
         "chartreuse", "forest", "sage", "lavender", "lilac", "violet", "purple", "mauve", "periwinkle", "amber",
         "gold", "bronze", "copper", "rust", "sienna", "umber", "tan", "khaki", "ivory", "cream",
         "pearl", "silver", "gray", "grey", "charcoal", "slate", "ebony", "jet", "onyx", "obsidian",
@@ -89,6 +89,41 @@ VOCABULARY: dict[str, list[str]] = {
 # animal/food, animal/vehicle, ...). Excluded from VOCABULARY and from training:
 # the classifier will confidently pick one category for these, and that is not a
 # bug, it is the point -- the label is underdetermined, not the model.
+# "olive" joined this list (moved out of `colour`) because it is exactly the same
+# shape as "orange"/"mint": a food that is also a colour name. `colour` was
+# backfilled with "verdigris" to keep the category at 100.
 AMBIGUOUS: list[str] = [
-    "orange", "mint", "turkey", "jaguar", "plum", "salmon", "ginger", "date",
+    "orange", "mint", "turkey", "jaguar", "plum", "salmon", "ginger", "date", "olive",
+]
+
+# Pairs (plain_word, compound_word) where the compound tokenizes with the plain
+# word as one of its wordpieces -- e.g. "catboat" -> ["cat", "##boat"] -- which
+# pulls its embedding toward the plain word even though the two mean unrelated
+# things. This is a real property of subword tokenization, not a bug: measured
+# with this model, cos(cat, catboat) = 0.5941, higher than cos(cat, tiger) =
+# 0.5453, a genuine animal neighbour. But the model still gets the *meaning*
+# right -- cos(catboat, boat) = 0.7455 far exceeds the "cat" leakage, and
+# cos(catboat, dog) = 0.3205 is low -- so the lesson is that embeddings are
+# *mostly* semantic, with a measurable subword-driven wobble, not that they are
+# purely spelling-driven the way cos(cat, car) > cos(cat, dog) would be.
+#
+# Excluded from VOCABULARY and from training for the same reason AMBIGUOUS is:
+# the compound word is not a clean example of its category and would just add
+# noise to the classifier and the neighbour list.
+#
+# Verified by direct measurement before inclusion (see the numbers above and
+# below); several plausible-looking pairs were tried and dropped because they
+# did NOT show the "meaning wins, subword only wobbles it" shape -- for example
+# cos(bee, beetroot) = 0.7689 is *higher* than cos(beetroot, beet) = 0.6931, so
+# beetroot's embedding is dominated by the shared "bee" token rather than
+# recovering its true meaning, and "car"/"carpet" does not even tokenize with a
+# shared piece ("carpet" is one wordpiece, not "car" + "##pet"). Both were
+# dropped rather than included to force the phenomenon.
+#
+# cos(ram, ramrod) = 0.4425, above cos(ram, goat) = 0.2633 (a genuine animal
+# neighbour), while cos(ramrod, rod) = 0.5734 exceeds the "ram" leakage and
+# cos(ramrod, cheese) = 0.2282 is low -- the same shape as cat/catboat.
+SUBWORD_LEAKAGE: list[tuple[str, str]] = [
+    ("cat", "catboat"),
+    ("ram", "ramrod"),
 ]

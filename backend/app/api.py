@@ -1,4 +1,4 @@
-"""The router: /api/tokenize, /api/embed, /api/neighbours.
+"""The router: /api/tokenize, /api/embed, /api/neighbours, /api/classify, /api/map.
 
 User-fixable errors (empty text, k out of range) raise StageError, which
 app.main's exception handler turns into a 409 with a runnable hint -- never a
@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from app.embed import embed_texts
 from app.errors import StageError
 from app.tokenize import tokenize_detail
+from app.train import TrainedModels, classify as classify_text
 
 router = APIRouter(prefix="/api")
 
@@ -53,3 +54,33 @@ def neighbours(request: Request, text: str = "", k: int = 5) -> dict:
         )
     hits = request.app.state.vocab_index.neighbours(text, k=k)
     return {"hits": hits}
+
+
+@router.get("/classify")
+def classify(request: Request, text: str = "") -> dict:
+    text = _require_text(text)
+    models: TrainedModels = request.app.state.trained_models
+    result = classify_text(text, models=models)
+    return {
+        **result,
+        # Every figure travels with its baseline: the classifier's held-out
+        # macro-F1 next to the chance rate it has to beat, so the UI can
+        # never show one without the other.
+        "macro_f1": models.supervised["macro_f1"],
+        "baseline_macro_f1": models.supervised["baseline_macro_f1"],
+    }
+
+
+@router.get("/map")
+def map_(request: Request) -> dict:
+    models: TrainedModels = request.app.state.trained_models
+    u = models.unsupervised
+    return {
+        "words": u["words"],
+        "categories": u["categories"],
+        "clusters": u["clusters"],
+        "coords": u["coords"],
+        "n_clusters": u["n_clusters"],
+        "ari": u["ari"],
+        "seed": models.seed,
+    }

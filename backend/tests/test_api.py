@@ -67,6 +67,42 @@ def test_neighbours_endpoint_rejects_k_out_of_range_with_409(client):
     assert r.status_code == 409
 
 
+def test_neighbours_endpoint_rejects_negative_k_with_409(client):
+    """The range guard is `1 <= k <= MAX_K`; a negative k must fail that lower
+    bound explicitly rather than relying on it being inferred from k=0."""
+    r = client.get("/api/neighbours", params={"text": "cat", "k": -5})
+    assert r.status_code == 409
+    body = r.json()
+    assert "detail" in body and "hint" in body
+
+
 def test_neighbours_endpoint_rejects_empty_text_with_409(client):
     r = client.get("/api/neighbours", params={"text": ""})
     assert r.status_code == 409
+
+
+def test_classify_endpoint_returns_prediction_with_its_baseline(client):
+    """The UI shows macro-F1 next to its baseline (never one without the other),
+    so the endpoint -- not just the pure function -- must carry both."""
+    r = client.get("/api/classify", params={"text": "cat"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["predicted"] == "animal"
+    assert abs(sum(p["probability"] for p in body["all"]) - 1.0) < 1e-6
+    assert 0.0 < body["baseline_macro_f1"] < 1.0
+    assert body["macro_f1"] > body["baseline_macro_f1"]
+
+
+def test_classify_endpoint_rejects_empty_text_with_409(client):
+    r = client.get("/api/classify", params={"text": ""})
+    assert r.status_code == 409
+
+
+def test_map_endpoint_returns_one_coordinate_per_word_with_the_ari(client):
+    r = client.get("/api/map")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["words"]) == 600
+    assert len(body["coords"]) == 600 and len(body["coords"][0]) == 2
+    assert body["n_clusters"] == 6
+    assert -1.0 <= body["ari"] <= 1.0
