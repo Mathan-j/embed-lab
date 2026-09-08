@@ -12,6 +12,7 @@ from app.embed import embed_texts
 from app.errors import StageError
 from app.tokenize import tokenize_detail
 from app.train import TrainedModels, classify as classify_text
+from data.vocabulary import AMBIGUOUS, SUBWORD_LEAKAGE
 
 router = APIRouter(prefix="/api")
 
@@ -68,6 +69,30 @@ def classify(request: Request, text: str = "") -> dict:
         # never show one without the other.
         "macro_f1": models.supervised["macro_f1"],
         "baseline_macro_f1": models.supervised["baseline_macro_f1"],
+    }
+
+
+@router.get("/demos")
+def demos() -> dict:
+    """The two 'try these' rows the UI needs, served from the same list the
+    classifier and training were built to exclude -- never hardcoded in the
+    client, so the demo stays honest if the vocabulary changes.
+
+    `ambiguous`: words that genuinely belong to two categories (e.g. `orange`
+    is colour/food). The classifier picks one confidently; that is expected,
+    the label is underdetermined, not the model.
+
+    `subword_leakage`: (plain, compound) pairs where the compound tokenizes
+    with the plain word as a wordpiece (e.g. `catboat` -> `cat` + `##boat`),
+    pulling its embedding toward the plain word's even though the meanings
+    are unrelated -- a measurable subword-driven wobble, not a meaning mixup.
+    """
+    return {
+        "ambiguous": AMBIGUOUS,
+        "subword_leakage": [
+            {"plain": plain, "compound": compound}
+            for plain, compound in SUBWORD_LEAKAGE
+        ],
     }
 
 

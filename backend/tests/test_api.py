@@ -98,6 +98,19 @@ def test_classify_endpoint_rejects_empty_text_with_409(client):
     assert r.status_code == 409
 
 
+def test_demos_endpoint_returns_ambiguous_words_and_subword_leakage_pairs(client):
+    """The UI's 'try these' rows must come from the server, not be hardcoded in
+    Dart -- this pins the shape those rows are built from."""
+    r = client.get("/api/demos")
+    assert r.status_code == 200
+    body = r.json()
+    assert "orange" in body["ambiguous"]
+    assert len(body["ambiguous"]) >= 8
+    pairs = {(p["plain"], p["compound"]) for p in body["subword_leakage"]}
+    assert ("cat", "catboat") in pairs
+    assert ("ram", "ramrod") in pairs
+
+
 def test_map_endpoint_returns_one_coordinate_per_word_with_the_ari(client):
     r = client.get("/api/map")
     assert r.status_code == 200
