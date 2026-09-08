@@ -173,11 +173,20 @@ class DemosResult {
 
 class EmbedLabApi {
   final String baseUrl;
-  EmbedLabApi({String? baseUrl}) : baseUrl = baseUrl ?? resolveBaseUrl();
+
+  /// Optional client, for tests. `flutter test` installs an HttpOverrides that
+  /// answers every request with a canned 400 and never touches the network, so
+  /// a test cannot produce a real ClientException by pointing at a dead port --
+  /// it has to inject a client that raises one.
+  final http.Client _client;
+
+  EmbedLabApi({String? baseUrl, http.Client? client})
+      : baseUrl = baseUrl ?? resolveBaseUrl(),
+        _client = client ?? http.Client();
 
   Future<Map<String, dynamic>> _getJson(String path, [Map<String, String>? params]) async {
     final uri = Uri.parse('$baseUrl$path').replace(queryParameters: params);
-    final resp = await http.get(uri);
+    final resp = await _client.get(uri);
     final body = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     if (resp.statusCode == 409) {
       throw ApiHintException(body['detail'] ?? 'invalid input', body['hint'] ?? '');

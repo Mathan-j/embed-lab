@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import 'api.dart';
 import 'cards/demos_row.dart';
@@ -26,14 +27,19 @@ class EmbedLabApp extends StatelessWidget {
 }
 
 class EmbedLabScreen extends StatefulWidget {
-  const EmbedLabScreen({super.key});
+  /// Optional client, for tests. Production passes nothing and gets the default
+  /// (`resolveBaseUrl()`); a test can point it at a dead port to exercise the
+  /// unreachable-backend path without mocking package:http.
+  final EmbedLabApi? api;
+
+  const EmbedLabScreen({super.key, this.api});
 
   @override
   State<EmbedLabScreen> createState() => _EmbedLabScreenState();
 }
 
 class _EmbedLabScreenState extends State<EmbedLabScreen> {
-  late final EmbedLabApi _api = EmbedLabApi();
+  late final EmbedLabApi _api = widget.api ?? EmbedLabApi();
   final _controller = TextEditingController(text: 'cat');
 
   String _queriedWord = '';
@@ -61,6 +67,25 @@ class _EmbedLabScreenState extends State<EmbedLabScreen> {
   // whole point of the card: spelling is not meaning.
   double? _catDogCosine;
   double? _catCarCosine;
+
+  // A ClientException (web "Failed to fetch", native SocketException wrapped
+  // by package:http) means the host could not be reached at all -- this is a
+  // different condition from a real API response (e.g. a 409 with a hint),
+  // which is surfaced by ApiHintException and must keep showing verbatim.
+  // Computed from current errors rather than tracked separately, so it
+  // clears itself the moment a retry succeeds.
+  bool get _backendUnreachable {
+    for (final e in [
+      _tokenizeError,
+      _embedError,
+      _neighboursError,
+      _classifyError,
+      _mapError,
+    ]) {
+      if (e is http.ClientException) return true;
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -158,11 +183,13 @@ class _EmbedLabScreenState extends State<EmbedLabScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final unreachable = _backendUnreachable;
     return Scaffold(
       appBar: AppBar(title: const Text('Embed Lab')),
       body: SafeArea(
         child: ListView(
           children: [
+            if (unreachable) _OfflineBanner(baseUrl: _api.baseUrl),
             Padding(
               padding: const EdgeInsets.all(16),
               child: TextField(
@@ -185,25 +212,74 @@ class _EmbedLabScreenState extends State<EmbedLabScreen> {
               },
             ),
             const SizedBox(height: 4),
-            TokensCard(data: _tokenize, loading: _loadingWord, error: _tokenizeError),
-            EmbeddingCard(data: _embed, loading: _loadingWord, error: _embedError),
+            TokensCard(
+              data: _tokenize,
+              loading: _loadingWord,
+              error: unreachable ? null : _tokenizeError,
+            ),
+            EmbeddingCard(
+              data: _embed,
+              loading: _loadingWord,
+              error: unreachable ? null : _embedError,
+            ),
             NeighboursCard(
               data: _neighbours,
               loading: _loadingWord,
-              error: _neighboursError,
+              error: unreachable ? null : _neighboursError,
               catDogCosine: _catDogCosine,
               catCarCosine: _catCarCosine,
             ),
-            PredictionCard(data: _classify, loading: _loadingWord, error: _classifyError),
+            PredictionCard(
+              data: _classify,
+              loading: _loadingWord,
+              error: unreachable ? null : _classifyError,
+            ),
             MapCard(
               data: _map,
               loading: _loadingMap,
-              error: _mapError,
+              error: unreachable ? null : _mapError,
               typedWord: _queriedWord,
             ),
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Shown once, at the top, when the backend host cannot be reached at all --
+/// replacing what would otherwise be five copies of the same raw
+/// ClientException, one per card. Names the URL once and says what to do
+/// about it, in words that assume no familiarity with this project.
+class _OfflineBanner extends StatelessWidget {
+  final String baseUrl;
+  const _OfflineBanner({required this.baseUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        border: Border.all(color: Colors.orange.shade200),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.cloud_off, color: Colors.orange.shade800),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "Can't reach the API at $baseUrl. This demo needs the backend "
+              'running -- see the README to start it locally, or rebuild with '
+              '--dart-define=API_BASE=<url>.',
+              style: TextStyle(color: Colors.orange.shade900),
+            ),
+          ),
+        ],
       ),
     );
   }
