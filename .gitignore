@@ -1,0 +1,6 @@
+data/models/
+__pycache__/
+*.pyc
+.venv/
+backend/.venv/
+.superpowers/
