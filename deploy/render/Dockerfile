@@ -62,25 +62,30 @@ RUN python scripts/export_onnx.py \
 FROM python:3.13-slim AS runtime
 
 RUN useradd -m -u 1000 appuser
-WORKDIR /home/appuser/app
-
 RUN pip install --no-cache-dir uv
+
+# Everything below runs AS appuser and every COPY sets its owner directly.
+# The earlier version ended with `RUN chown -R appuser:appuser /home/appuser`,
+# which rewrites every file it touches into a fresh layer -- a 526 MB
+# duplicate of the venv, the model and the app in a 1.87 GB image. Docker
+# layers are copy-on-write, so a recursive chown after the fact never edits
+# in place; it copies. `--chown` on each COPY and a `USER` switch before the
+# install get the same ownership for nothing.
+USER appuser
+WORKDIR /home/appuser/app
 
 # Resolve and materialise the RUNTIME dependency group only. `--no-dev`
 # excludes torch/sentence-transformers/onnx (dev-only in pyproject.toml);
 # `--frozen` refuses to silently re-resolve against a stale lockfile.
-COPY backend/pyproject.toml backend/uv.lock ./
+COPY --chown=appuser:appuser backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY backend/app ./app
-COPY backend/data/__init__.py backend/data/vocabulary.py ./data/
+COPY --chown=appuser:appuser backend/app ./app
+COPY --chown=appuser:appuser backend/data/__init__.py backend/data/vocabulary.py ./data/
 # The exported ONNX file + the tokenizer's HF cache, baked in at build time --
 # a cold start is then a model LOAD, not a download, and the container never
 # needs network access at runtime (HF_HUB_OFFLINE=1 below enforces that).
-COPY --from=export /build/data/models ./data/models
-
-RUN chown -R appuser:appuser /home/appuser
-USER appuser
+COPY --from=export --chown=appuser:appuser /build/data/models ./data/models
 
 ENV HOME=/home/appuser \
     PYTHONUNBUFFERED=1 \
