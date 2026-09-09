@@ -22,7 +22,13 @@ class Settings:
     # day -- the numbers on screen would move under nobody's control.
     embed_model_revision: str = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
 
-    torch_threads: int = 4
+    # The fp32 ONNX export of that exact revision's transformer, produced offline
+    # by scripts/export_onnx.py. See app.embed's module docstring for why fp32
+    # (not int8) and why only the bare transformer, not the full
+    # SentenceTransformer pipeline, is exported.
+    onnx_model_path: Path = BACKEND_DIR / "data" / "models" / "all-MiniLM-L6-v2.onnx"
+
+    onnx_threads: int = 4
     seed: int = 42
 
 

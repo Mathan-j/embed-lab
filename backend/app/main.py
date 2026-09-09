@@ -13,9 +13,9 @@ from app.vocab import VocabIndex
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import torch  # local import so importing app.main does not drag torch in unconditionally
-
-    torch.set_num_threads(settings.torch_threads)  # exactly once, here
+    # Thread count is set on the onnxruntime SessionOptions in app.embed, not
+    # here -- there is no global "set threads" call for onnxruntime the way
+    # torch.set_num_threads() was a one-time process-wide setting.
 
     app.state.vocab_index = VocabIndex()  # embeds the 600-word vocabulary once (~2s)
 

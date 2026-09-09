@@ -6,17 +6,26 @@ dependencies = [
     "fastapi>=0.141.1",
     "huggingface-hub>=1.30.0",
     "numpy>=2.0.0",
+    "onnxruntime>=1.29.0",
     "scikit-learn>=1.5.0",
-    "sentence-transformers>=6.0.1",
     "tokenizers>=0.23.2",
-    "torch>=2.14.0",
     "uvicorn[standard]>=0.52.4",
 ]
 
+# torch and sentence-transformers are DEV-ONLY: they exist to run
+# scripts/export_onnx.py (the build-time ONNX export) and the torch-vs-onnx
+# equivalence test in tests/test_onnx_equivalence.py. The runtime app must
+# never import either -- see `uv run --no-dev python -c "import app.main"`,
+# which must succeed, and the same environment's `python -c "import torch"`,
+# which must fail. That is the whole point of the ONNX migration: a 512 MB
+# free host cannot carry torch's resident footprint.
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "onnx>=1.17.0",
     "pytest>=9.1.1",
+    "sentence-transformers>=6.0.1",
+    "torch>=2.14.0",
 ]
 
 [tool.uv]
@@ -33,3 +42,6 @@ torch = { index = "pytorch-cpu" }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "dev: requires the dev-only torch/sentence-transformers stack; skipped in the torch-free runtime environment.",
+]
