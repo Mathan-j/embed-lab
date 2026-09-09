@@ -31,5 +31,11 @@ class Settings:
     onnx_threads: int = 4
     seed: int = 42
 
+    # The picked LogisticRegression classifier + the scored supervised/unsupervised
+    # figures, fit ONCE by scripts/fit_models.py (at container build time, in the
+    # runtime image's own scikit-learn) and LOADED here at boot. See app.train's
+    # module docstring for why fitting and loading must share one environment.
+    trained_models_path: Path = BACKEND_DIR / "data" / "models" / "trained_models.joblib"
+
 
 settings = Settings()

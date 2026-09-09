@@ -6,11 +6,23 @@ was measured under: a seed, and (for the classifier) the baseline it beat. A
 macro-F1 or an ARI reported alone is not evidence of anything -- see the
 docstrings on `train_supervised` and `train_unsupervised` for what each
 baseline means and why.
+
+Fit-at-build, load-at-boot: `fit_models_from_scratch` is the only function that
+actually calls `.fit()` on the full 600-word vocabulary. It runs ONCE, at
+container build time (`scripts/fit_models.py`), in the RUNTIME stage's own
+scikit-learn -- never the export stage's, which has a different resolved
+scikit-learn and joblib/pickle artifacts are version-coupled. `build_models`,
+called from `app.main`'s lifespan, LOADS that fit's pickled output instead of
+repeating it on every process start, which used to be the dominant cold-start
+cost. `tests/test_startup_cache.py` is the gate proving the load is invisible
+to callers.
 """
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
+import joblib
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -20,6 +32,7 @@ from sklearn.model_selection import train_test_split
 
 from app.config import settings
 from app.embed import embed_texts
+from app.errors import StageError
 from data.vocabulary import VOCABULARY
 
 
@@ -185,8 +198,24 @@ class TrainedModels:
     unsupervised: dict
 
 
-def build_models(seed: int = settings.seed) -> TrainedModels:
-    """Builds the live classifier and both scored figures at one seed.
+def fit_models_from_scratch(seed: int = settings.seed) -> TrainedModels:
+    """Fits the live classifier and both scored figures at one seed, from scratch.
+
+    THE GATE for the startup-cache change (fit-at-build, load-at-boot): this is
+    the ONLY function in the project allowed to call `LogisticRegression.fit`,
+    `KMeans.fit` or `PCA.fit` on the full 600-word vocabulary. `scripts/fit_models.py`
+    calls this once, at container build time, and pickles the result to
+    `settings.trained_models_path` via `save_models`. `app.main`'s lifespan then
+    calls `build_models`, which LOADS that artifact via `load_models` instead of
+    repeating the fit on every process start.
+
+    `tests/test_startup_cache.py` is the proof that loading changes nothing a
+    caller can observe: it compares THIS function's output against a save/load
+    round-trip of it, on every one of the 600 vocabulary words plus the
+    ambiguous and subword-leakage lists, and is proven non-vacuous by mutation
+    (perturbing one loaded coefficient and confirming the comparison catches it)
+    -- see that test module's docstring, which plays the same role for this
+    change that `tests/test_onnx_equivalence.py` plays for the ONNX migration.
 
     The classifier used by `/api/classify` is fit on all 600 words, not just
     the 70% training split -- `train_supervised` exists to produce an honest
@@ -207,9 +236,62 @@ def build_models(seed: int = settings.seed) -> TrainedModels:
     )
 
 
+def save_models(models: TrainedModels, path: Path = settings.trained_models_path) -> None:
+    """Pickles a `TrainedModels` (classifier + both scored dicts) to `path` via
+    joblib -- the same library scikit-learn itself recommends for persisting
+    fitted estimators. Called once, at container build time, by
+    `scripts/fit_models.py`, in the SAME environment (same resolved
+    scikit-learn) that `load_models` will later run in -- see this module's
+    top docstring for why that pairing matters.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(models, path)
+
+
+def load_models(path: Path = settings.trained_models_path) -> TrainedModels:
+    """Loads a `TrainedModels` pickled by `save_models`.
+
+    Raises a `StageError` (409, with a runnable hint) rather than a bare
+    `FileNotFoundError` if the artifact is missing -- e.g. a fresh checkout
+    that has not yet run the one-time build step -- mirroring how
+    `app.embed._load_session` handles a missing ONNX file.
+    """
+    if not path.exists():
+        raise StageError(
+            detail=f"The trained-model artifact is not present at {path}.",
+            hint="Run `uv run python scripts/fit_models.py` to produce it, then retry.",
+        )
+    return joblib.load(path)
+
+
+def build_models(seed: int = settings.seed) -> TrainedModels:
+    """The boot-time entry point: LOADS the classifier and both scored figures
+    that were fit once at container build time, instead of re-fitting
+    LogisticRegression, KMeans and PCA (on top of re-embedding all 600 words)
+    on every process start. That fit-on-every-boot was the dominant cold-start
+    cost; see `fit_models_from_scratch` for where the real fit now lives and
+    `tests/test_startup_cache.py` for the proof this substitution is invisible
+    to callers.
+
+    Raises `StageError` if the cached artifact was fit at a different seed
+    than requested -- a stale artifact silently serving the wrong seed's
+    numbers would be a much worse failure than a loud one.
+    """
+    models = load_models(settings.trained_models_path)
+    if models.seed != seed:
+        raise StageError(
+            detail=(
+                f"The cached trained-model artifact was fit at seed={models.seed}, "
+                f"but seed={seed} was requested."
+            ),
+            hint=f"Re-run `uv run python scripts/fit_models.py --seed {seed}` to refresh it.",
+        )
+    return models
+
+
 @lru_cache(maxsize=None)
 def _default_models() -> TrainedModels:
-    """Lazily-built models at the default seed, for callers (tests, and
+    """Lazily-loaded models at the default seed, for callers (tests, and
     `classify()` when no explicit models are supplied) that do not go through
     the app lifespan. The live app instead builds one `TrainedModels` in
     `app.main`'s lifespan and reuses it for every request.

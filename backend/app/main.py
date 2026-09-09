@@ -19,8 +19,9 @@ async def lifespan(app: FastAPI):
 
     app.state.vocab_index = VocabIndex()  # embeds the 600-word vocabulary once (~2s)
 
-    # Builds the live classifier plus the scored supervised/unsupervised figures,
-    # all at one seed, once -- see app.train.build_models.
+    # LOADS the live classifier plus the scored supervised/unsupervised figures
+    # from the artifact scripts/fit_models.py fit once at container build time --
+    # no LogisticRegression/KMeans/PCA fit happens here. See app.train.build_models.
     app.state.trained_models = build_models(settings.seed)
 
     yield

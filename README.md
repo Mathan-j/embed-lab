@@ -92,15 +92,26 @@ meaning, which teaches the opposite lesson.
 
 Requires Python 3.13 + [uv](https://docs.astral.sh/uv/), and Flutter 3.47+ for the app.
 
+One-time setup on a fresh clone — produces the ONNX weights and the fitted classifier,
+both gitignored under `backend/data/models/`:
+
 ```bash
 cd backend
 uv sync
+uv run python scripts/export_onnx.py    # needs network once, downloads MiniLM (~92 MB)
+uv run python scripts/fit_models.py     # fits LogisticRegression + KMeans + PCA once
+```
+
+Then run it:
+
+```bash
 uv run uvicorn app.main:app --port 8100
 ```
 
-The MiniLM weights (~92 MB) download once from the Hugging Face Hub into
-`backend/data/models/` and are gitignored. After that it runs fully offline —
-`HF_HUB_OFFLINE=1 uv run pytest -q` passes with no network.
+After the one-time setup above, everything runs fully offline —
+`HF_HUB_OFFLINE=1 uv run pytest -q` passes with no network. The Docker build (see
+`deploy/README.md`) runs both of these same scripts automatically, so this manual step is
+only needed for local development.
 
 ```bash
 cd frontend
