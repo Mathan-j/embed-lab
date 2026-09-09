@@ -141,7 +141,7 @@ naming a runnable command, never a stack trace.
 ## Tests
 
 ```bash
-cd backend && uv run pytest -q          # 30 tests
+cd backend && uv run pytest -q          # 37 tests, no network needed
 ```
 
 Written to be able to fail. Several were proven by mutation — deliberately breaking the
@@ -156,15 +156,42 @@ implementation and confirming the test goes red:
 
 ## Stack, and what is deliberately absent
 
-`sentence-transformers` (`all-MiniLM-L6-v2`, revision pinned), HuggingFace `tokenizers`,
-scikit-learn, numpy, FastAPI, Flutter.
+**Runtime:** ONNX Runtime, HuggingFace `tokenizers`, scikit-learn, numpy, FastAPI,
+Flutter. **`all-MiniLM-L6-v2` at a pinned revision**, exported to fp32 ONNX.
+
+**`torch` and `sentence-transformers` are dev-only.** They exist to run the one-time
+ONNX export and the torch-vs-ONNX equivalence test — the serving container has neither.
+That swap took the service from ~498 MB resident to ~229 MB, which is what lets it run
+on a free 512 MB instance, and it moved no published number: max per-dimension
+difference against the torch path is **2.38e-07** across 33 words, asserted by
+`tests/test_onnx_equivalence.py`.
 
 **No vector database.** 600 vectors is 920 KB and one matmul over them is microseconds —
 an ANN index would add a dependency, an approximation, and a recall number to explain,
 in exchange for nothing measurable. (The sibling project uses Qdrant because it has
 2,014 vectors *and* needs payload filtering. This has neither.)
 
-No Docker, no SQLite, no chunking, no LLM.
+No SQLite, no chunking, no LLM. Docker only for deployment — see `deploy/README.md`.
+
+## Deploying it
+
+| target | host | cost |
+|---|---|---|
+| Backend | Oracle Cloud **Always Free** ARM VM (Ampere A1) | free, always on |
+| Web | Cloudflare Pages / GitHub Pages | free |
+| Android | GitHub Releases (`.apk`) | free |
+| Windows | GitHub Releases (`.zip`) | free |
+
+The backend needs ~229 MB and stays under a 512 MB cap with headroom (verified with
+`docker run --memory=512m`). Oracle's Always Free ARM shape offers 4 cores and 24 GB, so
+it is chosen for being *always on* rather than for capacity: scale-to-zero hosts make the
+first visitor after an idle period wait through a cold start (~5.9 s here), and an
+always-on instance pays that once.
+
+Note the ARM detail: Ampere A1 is **arm64**, so build the image on the VM rather than
+pushing an amd64 one. `deploy/README.md` has the steps, including the iptables rule
+Oracle's Ubuntu images ship with that silently drops inbound traffic even after the port
+is opened in the console.
 
 ## Roadmap
 
