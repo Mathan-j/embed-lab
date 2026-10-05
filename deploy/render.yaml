@@ -1,0 +1,25 @@
+# Render Blueprint. In Render: New -> Blueprint -> connect Mathan-j/embed-lab.
+#
+# Free plan caveat worth knowing before you share the link: a free web service
+# spins down after ~15 minutes idle, and the next request pays a cold start
+# (~6 s here once the container is running, plus Render's own wake time). The
+# model weights and the fitted classifier are baked into the image, so that is
+# a load, not a download -- but the wait is real.
+services:
+  - type: web
+    name: embed-lab-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./deploy/docker/Dockerfile
+    # Context is the repo root: the Dockerfile COPYs from backend/.
+    dockerContext: .
+    # Cheapest endpoint that proves the app is actually serving -- it reads
+    # the vocabulary module rather than touching the ONNX session.
+    healthCheckPath: /api/demos
+    autoDeploy: true
+    envVars:
+      # The container binds ${PORT:-10000}; Render injects PORT itself, so
+      # this is belt-and-braces for a local `docker run` with the same file.
+      - key: PORT
+        value: 10000

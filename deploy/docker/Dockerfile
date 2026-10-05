@@ -1,48 +1,33 @@
-# Embed Lab backend, for a Docker container on Oracle Cloud's Always Free
-# Ampere A1 (ARM64) VM. See deploy/README.md for provisioning the instance,
-# opening the port (OCI security list AND the instance's own iptables), and
-# building/running this image.
+# Embed Lab backend, as a Docker container.
 #
-# No architecture-specific lines in this file: `python:3.13-slim` and every
-# pinned wheel below (torch, onnxruntime, scikit-learn) publish linux/arm64
-# builds for cp313, so building this Dockerfile ON an ARM64 host (the
-# documented, simplest path -- see deploy/README.md) just naturally produces
-# an arm64 image. No buildx, no --platform flag, no emulation.
+# Host-neutral. Verified built and run on linux/amd64 (Render's build
+# machines, and locally under `docker run --memory=512m`). Every pinned wheel
+# below -- torch for the export stage, onnxruntime / scikit-learn for the
+# runtime -- also publishes linux/arm64 cp313 builds, so the same file builds
+# natively on an ARM host (e.g. Oracle Always Free's Ampere A1) with no
+# buildx, no --platform flag and no emulation. Nothing here is arch-specific.
 #
-# Three-stage build:
+# Two stages, and the split is the whole point of the ONNX migration made
+# concrete in the image:
 #
 #   Stage "export"  -- torch + sentence-transformers ARE installed here, to
 #                       run scripts/export_onnx.py once and produce a single
-#                       fp32 ONNX file (plus the tokenizer.json HF cache).
-#                       This stage's layers are discarded; none of its
-#                       packages reach the final image.
+#                       fp32 ONNX file (plus the tokenizer.json HF cache),
+#                       and then scripts/fit_models.py to fit the classifier.
+#                       These layers are discarded; none of their packages
+#                       reach the final image.
 #
 #   Stage "runtime" -- fastapi + onnxruntime + tokenizers + numpy +
-#                       scikit-learn only, installed from uv.lock's non-dev
-#                       group. No torch, no sentence-transformers, no
-#                       transformers. This is what actually runs, and what
-#                       actually has to fit a 512 MB budget (Always Free ARM
-#                       has far more than that available, but the budget this
-#                       image was built to is still 512 MB -- see README.md).
-#                       This stage ALSO fits LogisticRegression + KMeans + PCA
-#                       once (`scripts/fit_models.py`) and bakes the result in
-#                       -- see the RUN step below for why it happens HERE and
-#                       not in the export stage.
+#                       scikit-learn only, from uv.lock's non-dev group. No
+#                       torch, no sentence-transformers, no transformers.
+#                       ~229 MiB resident, which is what lets it fit a free
+#                       512 MB instance.
 #
 # Build context MUST be the repository root (the folder containing both
-# `backend/` and `deploy/`), not `deploy/oracle/` -- see deploy/README.md.
+# `backend/` and `deploy/`), not `deploy/docker/` -- see deploy/README.md.
 #
-# Building this image requires OUTBOUND network access (the export stage
-# downloads torch (~200 MB) and the MiniLM weights (~90 MB) from the Hub to
-# produce the ONNX file). The RUNTIME CONTAINER needs none: `HF_HUB_OFFLINE=1`
-# below enforces that everything it needs was baked in at build time.
-#
-# Measured (amd64, this Dockerfile, --memory=512m, cold start to first
-# successful /api/classify): see
-# .superpowers/sdd/embed-lab-mvp/startup-cache-report.md for the full
-# before/after. ARM64 has not been measured -- there is no ARM hardware
-# available where this was built; the guide in README.md is written so the
-# first real run happens on the target VM itself.
+# The BUILD needs outbound network (it downloads MiniLM from the Hub). The
+# RUNTIME does not: weights are baked in and HF_HUB_OFFLINE=1 enforces it.
 
 # ---------------------------------------------------------------------------
 # Stage 1: export -- torch allowed, discarded after this stage
