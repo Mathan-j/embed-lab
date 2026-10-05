@@ -31,8 +31,19 @@ app = FastAPI(title="embed-lab", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://localhost:\d+",
-    allow_credentials=True,
+    # Any origin. This is a public, read-only, unauthenticated API: it holds
+    # no user data, sets no cookies, and every endpoint is a GET that returns
+    # the same thing to everybody. An allowlist would only have to be edited
+    # each time the app is hosted somewhere new.
+    #
+    # allow_credentials MUST be False alongside "*": the CORS spec forbids
+    # the wildcard with credentials, and browsers reject the pair outright --
+    # which is subtle, because curl ignores CORS completely, so the API can
+    # look perfectly healthy from a terminal while every browser is blocked.
+    # That is exactly how this was missed: curl said 200, the deployed page
+    # showed "can't reach the API".
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

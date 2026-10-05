@@ -1,11 +1,21 @@
-# Render Blueprint. In Render: New -> Blueprint -> connect Mathan-j/embed-lab.
+# Render Blueprint — both halves of Embed Lab.
 #
-# Free plan caveat worth knowing before you share the link: a free web service
-# spins down after ~15 minutes idle, and the next request pays a cold start
-# (~6 s here once the container is running, plus Render's own wake time). The
-# model weights and the fitted classifier are baked into the image, so that is
-# a load, not a download -- but the wait is real.
+# In Render: New -> Blueprint -> connect Mathan-j/embed-lab ->
+# Blueprint Path: deploy/render.yaml
+#
+# Two services:
+#   embed-lab-api  Docker web service  (free plan: sleeps after ~15 min idle)
+#   embed-lab-web  static site         (free: does NOT sleep, it is just files)
+#
+# Note the asymmetry: only the API sleeps. The web app is static and always
+# served, so after an idle period the page loads instantly and then waits on
+# the API waking up. The app shows its offline banner during that window
+# rather than a stack trace.
+
 services:
+  # ---------------------------------------------------------------------
+  # Backend — FastAPI + ONNX Runtime, ~230 MiB resident
+  # ---------------------------------------------------------------------
   - type: web
     name: embed-lab-api
     runtime: docker
@@ -14,12 +24,49 @@ services:
     dockerfilePath: ./deploy/docker/Dockerfile
     # Context is the repo root: the Dockerfile COPYs from backend/.
     dockerContext: .
-    # Cheapest endpoint that proves the app is actually serving -- it reads
-    # the vocabulary module rather than touching the ONNX session.
+    # Cheapest endpoint that proves it is serving — reads the vocabulary
+    # module without touching the ONNX session.
     healthCheckPath: /api/demos
     autoDeploy: true
     envVars:
-      # The container binds ${PORT:-10000}; Render injects PORT itself, so
-      # this is belt-and-braces for a local `docker run` with the same file.
       - key: PORT
         value: 10000
+
+  # ---------------------------------------------------------------------
+  # Frontend — Flutter web, built in Render's build step
+  # ---------------------------------------------------------------------
+  - type: web
+    name: embed-lab-web
+    runtime: static
+    # Render's build image has no Flutter, so fetch the SDK first. --depth 1
+    # keeps the clone to what the build needs; a full clone is ~1 GB of
+    # history nothing here reads.
+    #
+    # API_BASE is baked in at BUILD time (Flutter compiles it into the
+    # bundle), which is why this cannot be an env var read at runtime. If the
+    # API's URL ever changes, this value changes and the site is rebuilt.
+    #
+    # base-href is "/" here, unlike the GitHub Pages build which needs
+    # "/embed-lab/" — a Render static site is served from the domain root.
+    buildCommand: |
+      git clone --depth 1 -b stable https://github.com/flutter/flutter.git $HOME/flutter
+      export PATH="$HOME/flutter/bin:$PATH"
+      flutter --version
+      cd frontend
+      flutter build web \
+        --dart-define=API_BASE=https://embed-lab-api.onrender.com \
+        --base-href /
+    staticPublishPath: ./frontend/build/web
+    autoDeploy: true
+    # Flutter web is a single-page app: every route must serve index.html or
+    # a refresh on any path 404s.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      # The bundle is content-hashed by Flutter, so it is safe to cache hard;
+      # index.html must not be, or visitors keep getting the old bundle.
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
